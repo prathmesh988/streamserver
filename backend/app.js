@@ -7,7 +7,8 @@ const{spawn} = require('child_process');
 const ffmpegPath = ffmpeg.setFfmpegPath('C:\\Program Files\\ffmpeg-2023-11-22-git-0008e1c5d5-full_build\\bin'); // Path to the bundled ffmpeg
 // const ffmpegExecutable = path.basename(ffmpegPath); // Extracting the executable name
 const ffmpegExecutablePath = path.join('C:\\Program Files\\ffmpeg-2023-11-22-git-0008e1c5d5-full_build\\bin', 'ffmpeg.exe');
- 
+const ffmpegProcessesd = new Map();
+
 console.log('ffmpeg executable path:', ffmpegExecutablePath);
 
 const config = {
@@ -27,8 +28,11 @@ const config = {
 function startRecording(inputURL, outputFilePath) {
   const ffmpegProcess = spawn(ffmpegExecutablePath, [
     '-i', inputURL,
-    '-c', 'copy',
-    '-f', 'flv',
+    '-c:v', 'libx264', // Use H.264 video codec
+    '-c:a', 'aac', // Use AAC audio codec
+    '-movflags', '+faststart', // Place moov atom at the front of the file
+
+    '-f', 'mp4', // Change format to MP4 file
     outputFilePath,
   ]);
 
@@ -62,6 +66,7 @@ nms.on('onMessage', (id, msg) => {
 });
 
 nms.on('preConnect', (id, args) => {
+  const streamId = args.stream
   console.log('[NodeEvent on preConnect]:', `id=${id} args=${JSON.stringify(args)}`);
   console.log(`New RTMP stream connected: ${args.app}/${args.stream}`);
 
@@ -74,7 +79,8 @@ nms.on('preConnect', (id, args) => {
   startRecording(`rtmp://localhost:1935/live/hello`, outputFilePath);
 
   console.log('stream is sended everytime when the client connects to the server');
-  
+  ffmpegProcessesd.set(streamId, startRecording(`rtmp://localhost:1935/live/${streamId}`, outputFilePath));
+
 });
 // nms.on('postPublish', (id, streamPath, args) => {
 //   console.log(`Stream connected: ${streamPath}`);
@@ -98,6 +104,20 @@ nms.on('preConnect', (id, args) => {
 //     console.log(`FFmpeg process closed with code ${code}`);
 //   });
 // });
+
+
+nms.on('doneConnect', (id, args) => {
+  const streamId = args.stream;
+
+  // Retrieve and stop the ffmpeg process using the streamId
+  const ffmpegProcess = ffmpegProcesses.get(streamId);
+  if (ffmpegProcess) {
+    ffmpegProcess.kill('SIGINT'); // Gracefully stop the ffmpeg process
+    ffmpegProcesses.delete(streamId); // Remove the process from the map
+  }
+
+  console.log(`Stopped recording for stream ${streamId}`);
+});
 
 
 nms.on('onClose', (id, args) => {
